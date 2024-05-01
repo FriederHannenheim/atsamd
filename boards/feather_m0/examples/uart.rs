@@ -16,7 +16,7 @@ use feather_m0 as bsp;
 use bsp::{entry, periph_alias, pin_alias};
 use hal::clock::GenericClockController;
 use hal::dmac::{DmaController, PriorityLevel};
-use hal::prelude::*;
+use hal::fugit::RateExtU32;
 
 use pac::Peripherals;
 

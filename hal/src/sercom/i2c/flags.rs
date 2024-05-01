@@ -94,19 +94,3 @@ pub enum Error {
     #[cfg(feature = "dma")]
     Dma(crate::dmac::Error),
 }
-
-#[cfg(feature = "async")]
-impl embedded_hal_async::i2c::Error for Error {
-    // _ pattern reachable when "dma" feature enabled.
-    #[allow(unreachable_patterns)]
-    fn kind(&self) -> embedded_hal_async::i2c::ErrorKind {
-        use embedded_hal_async::i2c::{ErrorKind, NoAcknowledgeSource};
-        match self {
-            Error::ArbitrationLost => ErrorKind::ArbitrationLoss,
-            Error::BusError => ErrorKind::Bus,
-            Error::LengthError | Error::Timeout => ErrorKind::Overrun,
-            Error::Nack => ErrorKind::NoAcknowledge(NoAcknowledgeSource::Unknown),
-            _ => ErrorKind::Other,
-        }
-    }
-}

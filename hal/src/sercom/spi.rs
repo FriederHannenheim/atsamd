@@ -242,16 +242,16 @@
 //!
 //! Only `Spi` structs can actually perform transactions. To do so, use the
 //! various embedded HAL traits, like
-//! [`spi::FullDuplex`](embedded_hal::spi::FullDuplex),
-//! [`serial::Read`](embedded_hal::serial::Read) or
-//! [`serial::Write`](embedded_hal::serial::Write).
+//! [`spi::FullDuplex`](crate::ehal_02::spi::FullDuplex),
+//! [`serial::Read`](crate::ehal_02::serial::Read) or
+//! [`serial::Write`](crate::ehal_02::serial::Write).
 //! See the [`impl_ehal`] module documentation for more details about the
 //! specific trait implementations, which vary based on [`Size`] and
 //! [`Capability`].
 //!
 //! ```
 //! use nb::block;
-//! use embedded_hal::spi::FullDuplex;
+//! use crate::ehal_02::spi::FullDuplex;
 //!
 //! block!(spi.send(0xAA55));
 //! let rcvd: u16 = block!(spi.read());
@@ -325,9 +325,10 @@ use atsamd_hal_macros::{hal_cfg, hal_docs, hal_macro_helper, hal_module};
 use core::marker::PhantomData;
 
 use bitflags::bitflags;
-use embedded_hal::spi;
-pub use embedded_hal::spi::{Phase, Polarity, MODE_0, MODE_1, MODE_2, MODE_3};
+use num_traits::AsPrimitive;
 
+use crate::ehal;
+pub use crate::ehal::spi::{Phase, Polarity, MODE_0, MODE_1, MODE_2, MODE_3};
 use crate::sercom::{pad::SomePad, Sercom, APB_CLK_CTRL};
 use crate::time::Hertz;
 use crate::typelevel::{Is, NoneT, Sealed};
@@ -368,11 +369,7 @@ pub mod lengths {
     });
 }
 
-#[hal_module(
-    any("sercom0-d11", "sercom0-d21") => "spi/impl_ehal_thumbv6m.rs",
-    "sercom0-d5x" => "spi/impl_ehal_thumbv7em.rs",
-)]
-pub mod impl_ehal {}
+pub mod impl_ehal;
 
 #[cfg(feature = "async")]
 mod async_api;
@@ -472,21 +469,6 @@ pub enum Error {
     LengthError,
     #[cfg(feature = "dma")]
     Dma(crate::dmac::Error),
-}
-
-#[cfg(feature = "async")]
-impl embedded_hal_async::spi::Error for Error {
-    // _ pattern reachable when "dma" feature enabled.
-    #[allow(unreachable_patterns)]
-    fn kind(&self) -> embedded_hal_async::spi::ErrorKind {
-        use embedded_hal_async::spi::ErrorKind;
-
-        match self {
-            Error::Overflow => ErrorKind::Overrun,
-            Error::LengthError => ErrorKind::Other,
-            _ => ErrorKind::Other,
-        }
-    }
 }
 
 //=============================================================================
@@ -686,6 +668,7 @@ where
     mode: PhantomData<M>,
     size: PhantomData<Z>,
     freq: Hertz,
+    nop_word: DataWidth,
 }
 
 impl<P: ValidPads> Config<P> {
@@ -707,6 +690,7 @@ impl<P: ValidPads> Config<P> {
             mode: PhantomData,
             size: PhantomData,
             freq: freq.into(),
+            nop_word: 0x00.as_(),
         }
     }
 
@@ -773,6 +757,7 @@ where
             mode: PhantomData,
             size: PhantomData,
             freq: self.freq,
+            nop_word: self.nop_word,
         }
     }
 
@@ -877,19 +862,19 @@ where
 
     /// Get the SPI mode (clock polarity & phase)
     #[inline]
-    pub fn get_spi_mode(&self) -> spi::Mode {
+    pub fn get_spi_mode(&self) -> ehal::spi::Mode {
         self.regs.get_spi_mode()
     }
 
     /// Set the SPI mode (clock polarity & phase)
     #[inline]
-    pub fn set_spi_mode(&mut self, mode: spi::Mode) {
+    pub fn set_spi_mode(&mut self, mode: ehal::spi::Mode) {
         self.regs.set_spi_mode(mode);
     }
 
     /// Set the SPI mode (clock polarity & phase) using the builder pattern
     #[inline]
-    pub fn spi_mode(mut self, mode: spi::Mode) -> Self {
+    pub fn spi_mode(mut self, mode: ehal::spi::Mode) -> Self {
         self.set_spi_mode(mode);
         self
     }
@@ -921,6 +906,31 @@ where
     #[inline]
     pub fn bit_order(mut self, order: BitOrder) -> Self {
         self.set_bit_order(order);
+        self
+    }
+
+    /// Get the NOP word
+    ///
+    /// This word is used when reading in Duplex mode, since an equal number of
+    /// words must be sent in order to avoid overflow errors.
+    pub fn get_nop_word(&self) -> DataWidth {
+        self.nop_word
+    }
+
+    /// Set the NOP word
+    ///
+    /// This word is used when reading in Duplex mode, since an equal number of
+    /// words must be sent in order to avoid overflow errors.
+    pub fn set_nop_word(&mut self, nop_word: DataWidth) {
+        self.nop_word = nop_word;
+    }
+
+    /// Set the NOP word using the builder pattern
+    ///
+    /// This word is used when reading in Duplex mode, since an equal number of
+    /// words must be sent in order to avoid overflow errors.
+    pub fn nop_word(mut self, nop_word: DataWidth) -> Self {
+        self.nop_word = nop_word;
         self
     }
 
@@ -1328,6 +1338,19 @@ where
         self.config.as_mut().regs.rx_disable();
         self.config.as_mut().regs.disable();
         self.config
+    }
+
+    /// Block until at least one of the flags specified in `flags`, or `ERROR`,
+    /// is set.
+    ///
+    /// # Returns `Err(Error)` if an error is detected.
+    fn block_on_flags(&mut self, flags: Flags) -> Result<(), Error> {
+        while !self.read_flags().intersects(flags | Flags::ERROR) {
+            core::hint::spin_loop();
+        }
+
+        self.read_flags_errors()?;
+        Ok(())
     }
 }
 

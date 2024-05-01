@@ -190,12 +190,15 @@ sercom!(apbdmask, 7, Sercom7, SERCOM7, SERCOM7_RX, SERCOM7_TX, sercom7_);
 // even though some wakers may not be used on some chips if they actually don't
 // exist on variant's hardware
 #[hal_cfg("sercom0-d11")]
+#[cfg(feature = "async")]
 const NUM_SERCOM: usize = 3;
 
 #[hal_cfg("sercom0-d21")]
+#[cfg(feature = "async")]
 const NUM_SERCOM: usize = 6;
 
 #[hal_cfg("sercom0-d5x")]
+#[cfg(feature = "async")]
 const NUM_SERCOM: usize = 8;
 
 #[cfg(feature = "async")]
