@@ -1,6 +1,9 @@
 # Unreleased
 
 - Add async examples and update examples to match new HAL APIs
+
+# v0.7.0
+
 - Implement `embedded-hal` `1.0` for GPIO, SPI, I2C, UART and fix examples
 - Update the PACs to svd2rust 0.30.2.
 
